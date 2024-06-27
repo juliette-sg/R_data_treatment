@@ -1,0 +1,73 @@
+---
+title: "alignclusters"
+output: html_document
+date: "2023-05-04"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+path<- "U:/user/metadata.csv"
+data<-read.csv(path, sep=";", stringsAsFactors = TRUE) #import
+library(dplyr)
+
+var2 <- c("sample1","sample2","sample3")
+
+sample1<- data %>% group_by(clusters) %>%   summarise(sum(sample1), .groups = 'drop') #grouping by clusters
+sample2<- data %>% group_by(clusters) %>%   summarise(sum(sample2), .groups = 'drop')
+sample3<- data %>% group_by(clusters) %>%   summarise(sum(sample3), .groups = 'drop')
+...
+
+e<-list (sample1, sample2, sample3)
+
+xylclust<-Reduce(function(sample1, sample2, sample3) merge(sample1, sample2, by.x="clusters",by.y="clusters",all.x=TRUE,all.y=FALSE),e) #align sample lists
+
+
+xylclust$clusters <- NULL
+write.csv(xylclust,"U:/user/metadataclust.csv") #export
+```
+
+
+```{r setup, include=FALSE}
+
+xylclust2 <-read.csv("U:/user/metadataclust.csv", sep=";") #import binary matrix 
+var2 <- c("sample1","sample2", "sample3") #set samples names as variables
+caha <- hclust(dist(t(scale(xylclust2[,var2]))),method="ward") #hierarchical clustering on a set of dissimilarities
+plot(caha,xlab="",ylab="",main="Xylariales") #plot dendrogram
+
+library(ape)
+caha<- as.phylo(caha)
+ape::write.tree(caha,file='name.txt') #export dendrogram
+
+library(factoextra)
+
+xylclust <-read.csv("U:/user/listclusters.csv", sep=";", header = FALSE) #liste des clusters
+species <-read.csv("C:/User/listspecies.csv", sep=";", header = FALSE) #liste les ordres de chaque champignons
+xylclust2 <-read.csv("U:/user/binarymatrix.csv", sep=";", header = TRUE) #dataframe
+xylclust2<-t(xylclust2) #transpose
+
+ colnames(xylclust2)<- xylclust[1,] #assign clusters as column head
+
+xylclust2<- as.data.frame (xylclust2)
+xylgood <- cbind(xylclust2, species$V1) #assign orders to samples
+x.cal = xylgood[,1:288] #variables
+c.cal = xylgood[, 289] #facteurs
+c.cal<-as.factor(c.cal) #set as factor for random forest
+pca_res <- prcomp(xylgood[,c(1:288)]) #PCA
+
+p0<- fviz_pca_ind(pca_res,repel = TRUE, geom.ind = c("point"),addEllipses = TRUE, habillage = xylgood[,289], palette = c("#ff00d5","#F6BE00","#52A994","#ff0000","#aa00ff","#00aaff")) + theme(text = element_text(size = 12),
+         axis.title = element_text(size = 12),
+         axis.text = element_text(size = 12)) #visualize PCA for individuals
+p0<- fviz_pca_var(pca_res,repel = FALSE, geom.var = c("point", "text"),col.var = "steelblue", select.var = list(contrib = 40)) + theme(text = element_text(size = 8),
+         axis.title = element_text(size = 8),
+         axis.text = element_text(size = 8)) #visualize PCA for variables
+
+p0 #plot PCA
+
+
+```
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
