@@ -1,0 +1,133 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(MALDIquant)
+library(MALDIquantForeign)
+
+write.mgf <- function(file, peaks) {
+    if(file.exists(file)){
+        if (interactive()) {
+            overwrite <- askYesNo("File does already exist! Do you want to overwrite?", default = FALSE,
+                                  prompts = getOption("askYesNo", gettext(c("Yes", "No"))))
+            if (!overwrite)
+                return()
+        }
+        else
+        {
+            warning("File does already exist!")
+        }
+    file.remove(file)
+    }
+    
+    for (i in 1:length(peaks)) {
+        mat = matrix(data = NA, nrow = length(peaks[[i]]@mass), ncol= 2)
+        colnames(mat) = c("m/z", "intensity")
+        mat[,1] = peaks[[i]]@mass
+        mat[,2] = peaks[[i]]@intensity 
+
+        write.table("BEGIN IONS\nPEPMASS=0", file = file, append = TRUE, quote = FALSE, sep = "\t ", row.names = FALSE, col.names = FALSE)
+        write.table(list(mat), file = file,  append = TRUE, quote = FALSE, sep = "\t ", row.names = FALSE, col.names = FALSE)
+        write.table("END IONS\n", file = file,  append = TRUE, quote = FALSE, sep = "\t ", row.names = FALSE, col.names = FALSE) 
+    }
+}
+
+import.spectra <- function(path, halfWindowSize=15, baseline=30,
+                           SNR=6, massRange=c(400, 2500), binPeaks=FALSE,
+                           excludePattern = NULL) {
+    spectra <- import(path, verbose = FALSE, excludePattern = excludePattern, massRange=massRange)
+    #spectra <- transformIntensity(spectra, method="sqrt")
+    spectra <- smoothIntensity(spectra, method = "SavitzkyGolay",
+                               halfWindowSize = halfWindowSize)
+    spectra <- removeBaseline(spectra, method = "SNIP",
+                              iterations = baseline)
+    spectra <- calibrateIntensity(spectra, method = "TIC")
+    peaks <- detectPeaks(spectra, SNR = SNR, halfWindowSize = halfWindowSize)
+
+    if (binPeaks)
+        peaks <- binPeaks(peaks)
+    
+    return(peaks)
+}
+
+ppm <- function(mz, mz_ref) {
+  return(abs(mz-mz_ref) / mz_ref * 1e6)
+}
+
+substract.blank <- function(peaks, background, tol=500) {
+  out <- list()
+  for (i in 1:length(peaks)) {
+    indexes <- list()
+    for (j in 1:length(peaks[[i]]@mass)) {
+      for (k in 1:length(blank_peaks)) {
+        if (ppm(peaks[[i]]@mass[j], blank_peaks@mass[k]) < tol) {
+           indexes <- append(indexes, j)
+        }
+      }
+    }
+    indexes <- unlist(indexes)
+    if(!is.null(indexes)) {
+      p <- createMassPeaks(mass = peaks[[i]]@mass[-indexes],
+                           intensity = peaks[[i]]@intensity[-indexes],
+                           snr = peaks[[i]]@snr[-indexes],
+                           metaData = peaks[[i]]@metaData)
+    }
+    else {
+      p <- peaks[[i]]
+    }
+    out <- append(out, p)
+  }
+  
+  return(out)
+}
+```
+
+```{r}
+path <- "Z:/user/name.csv"
+mgf <- paste(path, ".mgf", sep = "")
+csv <- paste(path, ".txt", sep = "")
+
+halfWindowSize = 15
+baseline = 3000
+SNR = 15
+massRange = c(400, 2500)
+binPeaks = TRUE
+blanksPattern="Blanc"
+blank = "Blanc2"
+tolerance = 500 #ppm
+```
+
+```{r}
+blank_peaks <- import.spectra(paste(path, blank, sep = "/"),
+                              halfWindowSize = halfWindowSize, baseline = baseline,
+                              SNR = SNR, massRange = massRange, binPeaks = binPeaks)[[1]]
+plot(blank_peaks)
+```
+
+```{r}
+
+halfWindowSize = 15
+baseline = 3000
+SNR = 6
+massRange = c(400, 2500)
+binPeaks = TRUE
+
+
+peaks <- import.spectra(path, halfWindowSize = halfWindowSize, baseline = baseline,
+                        SNR = SNR, massRange = massRange, binPeaks = binPeaks,
+                        excludePattern = blanksPattern)
+plot(peaks[[1]])
+```
+
+```{r}
+filtered_peaks <- substract.blank(peaks, blank_peaks, tol = tolerance)
+plot(filtered_peaks[[1]])
+```
+
+```{r}
+write.mgf(mgf, filtered_peaks)
+write.csv(list.files(path), file=csv, row.names = FALSE, quote=FALSE)
+```
+
